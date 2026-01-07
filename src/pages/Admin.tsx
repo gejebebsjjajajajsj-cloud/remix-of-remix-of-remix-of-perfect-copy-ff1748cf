@@ -14,9 +14,19 @@ import {
   Image,
   Video,
   Type,
+  Trash2,
+  Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
-import { defaultSiteConfig, loadSiteConfig, saveSiteConfig, SiteConfig } from "@/config/siteConfig";
+import { 
+  defaultSiteConfig, 
+  loadSiteConfig, 
+  saveSiteConfig, 
+  loadSiteConfigFromDB, 
+  saveSiteConfigToDB,
+  resetMediaField,
+  SiteConfig 
+} from "@/config/siteConfig";
 import { supabase } from "@/integrations/supabase/client";
 
 const ADMIN_PASSWORD = "admin123"; // Altere para uma senha segura
@@ -26,7 +36,9 @@ const Admin = () => {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [showEditor, setShowEditor] = useState(false);
-  const [panelConfig, setPanelConfig] = useState<SiteConfig>(() => loadSiteConfig());
+  const [panelConfig, setPanelConfig] = useState<SiteConfig>(defaultSiteConfig);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
   const [stats, setStats] = useState({
     visits: 0,
     clicksPlan: 0,
@@ -36,6 +48,27 @@ const Admin = () => {
   });
 
   const today = new Date().toLocaleDateString("pt-BR");
+
+  // Carrega configurações do banco + localStorage
+  useEffect(() => {
+    const loadConfig = async () => {
+      setIsLoading(true);
+      try {
+        // Carrega do banco de dados (textos, cores, etc)
+        const dbConfig = await loadSiteConfigFromDB();
+        // Carrega do localStorage (mídias locais)
+        const localConfig = loadSiteConfig();
+        // Combina: banco tem prioridade para textos, local para mídias
+        setPanelConfig({ ...dbConfig, ...localConfig });
+      } catch (error) {
+        console.error("Erro ao carregar configurações:", error);
+        setPanelConfig(defaultSiteConfig);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    loadConfig();
+  }, []);
 
   useEffect(() => {
     const loadStats = async () => {
@@ -75,9 +108,25 @@ const Admin = () => {
     }
   };
 
-  const handleSaveConfig = () => {
-    saveSiteConfig(panelConfig);
-    toast.success("Configurações do painel salvas!");
+  const handleSaveConfig = async () => {
+    setIsSaving(true);
+    try {
+      // Salva textos e cores no banco de dados
+      const success = await saveSiteConfigToDB(panelConfig);
+      // Salva mídias no localStorage
+      saveSiteConfig(panelConfig);
+      
+      if (success) {
+        toast.success("Configurações salvas para todos os visitantes!");
+      } else {
+        toast.error("Erro ao salvar algumas configurações.");
+      }
+    } catch (error) {
+      console.error("Erro ao salvar:", error);
+      toast.error("Erro ao salvar configurações.");
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleImageUpload = (
@@ -91,6 +140,15 @@ const Admin = () => {
     const file = event.target.files?.[0];
     if (!file) return;
 
+    // Verifica tamanho do arquivo (max 5MB para imagens, 50MB para vídeos)
+    const isVideo = field.includes("Video");
+    const maxSize = isVideo ? 50 * 1024 * 1024 : 5 * 1024 * 1024;
+    
+    if (file.size > maxSize) {
+      toast.error(`Arquivo muito grande. Máximo: ${isVideo ? '50MB' : '5MB'}`);
+      return;
+    }
+
     const reader = new FileReader();
     reader.onload = () => {
       const result = reader.result as string;
@@ -98,16 +156,26 @@ const Admin = () => {
         ...current,
         [field]: result,
       }));
+      toast.success(`${isVideo ? 'Vídeo' : 'Imagem'} carregado! Clique em Salvar para aplicar.`);
     };
 
     reader.readAsDataURL(file);
   };
 
-  const handleResetConfig = () => {
+  const handleRemoveMedia = (field: keyof SiteConfig) => {
+    const updated = resetMediaField(field);
+    setPanelConfig(updated);
+    toast.success("Mídia removida. Voltou ao padrão.");
+  };
+
+  const handleResetConfig = async () => {
     setPanelConfig(defaultSiteConfig);
     saveSiteConfig(defaultSiteConfig);
+    // Remove todas as configurações do banco
+    await supabase.from("site_config").delete().neq("config_key", "");
     toast.success("Configurações resetadas para o padrão.");
   };
+
   if (!authenticated) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background px-4">
@@ -319,7 +387,7 @@ const Admin = () => {
             </div>
           </aside>
 
-          {/* Área principal de configuração (mobile = tela cheia, desktop = ao lado do menu) */}
+          {/* Área principal de configuração */}
           <section className="flex-1 overflow-y-auto bg-background px-3 py-3 md:px-6 md:py-6">
             <div className="mx-auto flex max-w-3xl flex-col gap-4">
               <header className="flex flex-col gap-2 rounded-lg border border-border/60 bg-card/90 px-3 py-2 text-xs md:flex-row md:items-center md:justify-between md:rounded-xl md:px-4 md:py-3 md:text-sm">
@@ -330,10 +398,9 @@ const Admin = () => {
                         Configurações da página
                       </h2>
                       <p className="text-[11px] text-muted-foreground">
-                        Edite tudo que aparece na página principal.
+                        Edite tudo que aparece na página principal. As mudanças valem para todos!
                       </p>
                     </div>
-                    {/* Botão de fechar visível no celular */}
                     <Button
                       size="icon"
                       variant="outline"
@@ -345,8 +412,20 @@ const Admin = () => {
                   </div>
                 </div>
                 <div className="flex gap-1.5 pt-1 md:gap-2 md:pt-0">
-                  <Button className="h-8 px-3 text-[11px] md:h-8 md:px-4 md:text-xs" size="sm" onClick={handleSaveConfig}>
-                    Salvar
+                  <Button 
+                    className="h-8 px-3 text-[11px] md:h-8 md:px-4 md:text-xs" 
+                    size="sm" 
+                    onClick={handleSaveConfig}
+                    disabled={isSaving}
+                  >
+                    {isSaving ? (
+                      <>
+                        <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                        Salvando...
+                      </>
+                    ) : (
+                      "Salvar"
+                    )}
                   </Button>
                   <Button
                     variant="outline"
@@ -359,258 +438,326 @@ const Admin = () => {
                 </div>
               </header>
 
-              <div className="space-y-3 pb-3 text-xs md:space-y-4 md:text-sm">
-                {/* Cores */}
-                <Card className="space-y-2.5 p-3 md:space-y-3 md:p-4">
-                  <div className="flex items-center gap-2">
-                    <div className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-primary/10 md:h-8 md:w-8">
-                      <Palette className="h-3 w-3 text-primary md:h-4 md:w-4" />
+              {isLoading ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                  <span className="ml-2 text-muted-foreground">Carregando configurações...</span>
+                </div>
+              ) : (
+                <div className="space-y-3 pb-3 text-xs md:space-y-4 md:text-sm">
+                  {/* Cores */}
+                  <Card className="space-y-2.5 p-3 md:space-y-3 md:p-4">
+                    <div className="flex items-center gap-2">
+                      <div className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-primary/10 md:h-8 md:w-8">
+                        <Palette className="h-3 w-3 text-primary md:h-4 md:w-4" />
+                      </div>
+                      <div>
+                        <h3 className="text-xs font-semibold md:text-sm">Cores da página</h3>
+                        <p className="text-[10px] text-muted-foreground md:text-xs">
+                          Fundo da página e cores dos botões.
+                        </p>
+                      </div>
                     </div>
-                    <div>
-                      <h3 className="text-xs font-semibold md:text-sm">Cores da página</h3>
-                      <p className="text-[10px] text-muted-foreground md:text-xs">
-                        Fundo da página e cores dos botões.
-                      </p>
+                    <div className="grid gap-2 md:grid-cols-3 md:gap-3">
+                      <div className="space-y-1">
+                        <p className="text-[10px] font-medium text-muted-foreground">Cor de fundo</p>
+                        <Input
+                          type="color"
+                          value={panelConfig.pageBackgroundColor || "#000000"}
+                          onChange={(e) =>
+                            setPanelConfig({ ...panelConfig, pageBackgroundColor: e.target.value })
+                          }
+                          className="h-9 w-full cursor-pointer rounded-md border border-border bg-transparent p-1"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-[10px] font-medium text-muted-foreground">Botão principal</p>
+                        <Input
+                          type="color"
+                          value={panelConfig.primaryButtonBgColor || "#ff0000"}
+                          onChange={(e) =>
+                            setPanelConfig({ ...panelConfig, primaryButtonBgColor: e.target.value })
+                          }
+                          className="h-9 w-full cursor-pointer rounded-md border border-border bg-transparent p-1"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-[10px] font-medium text-muted-foreground">Botão WhatsApp</p>
+                        <Input
+                          type="color"
+                          value={panelConfig.whatsappButtonBgColor || "#25D366"}
+                          onChange={(e) =>
+                            setPanelConfig({ ...panelConfig, whatsappButtonBgColor: e.target.value })
+                          }
+                          className="h-9 w-full cursor-pointer rounded-md border border-border bg-transparent p-1"
+                        />
+                      </div>
                     </div>
-                  </div>
-                  <div className="grid gap-2 md:grid-cols-3 md:gap-3">
-                    <div className="space-y-1">
-                      <p className="text-[10px] font-medium text-muted-foreground">Cor de fundo</p>
-                      <Input
-                        type="color"
-                        value={panelConfig.pageBackgroundColor || "#000000"}
-                        onChange={(e) =>
-                          setPanelConfig({ ...panelConfig, pageBackgroundColor: e.target.value })
-                        }
-                        className="h-9 w-full cursor-pointer rounded-md border border-border bg-transparent p-1"
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <p className="text-[10px] font-medium text-muted-foreground">Botão principal</p>
-                      <Input
-                        type="color"
-                        value={panelConfig.primaryButtonBgColor || "#ff0000"}
-                        onChange={(e) =>
-                          setPanelConfig({ ...panelConfig, primaryButtonBgColor: e.target.value })
-                        }
-                        className="h-9 w-full cursor-pointer rounded-md border border-border bg-transparent p-1"
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <p className="text-[10px] font-medium text-muted-foreground">Botão WhatsApp</p>
-                      <Input
-                        type="color"
-                        value={panelConfig.whatsappButtonBgColor || "#25D366"}
-                        onChange={(e) =>
-                          setPanelConfig({ ...panelConfig, whatsappButtonBgColor: e.target.value })
-                        }
-                        className="h-9 w-full cursor-pointer rounded-md border border-border bg-transparent p-1"
-                      />
-                    </div>
-                  </div>
-                </Card>
+                  </Card>
 
-                {/* Textos e botões */}
-                <Card className="space-y-2.5 p-3 md:space-y-3 md:p-4">
-                  <div className="flex items-center gap-2">
-                    <div className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-primary/10 md:h-8 md:w-8">
-                      <Type className="h-3 w-3 text-primary md:h-4 md:w-4" />
-                    </div>
-                    <div>
-                      <h3 className="text-xs font-semibold md:text-sm">Textos e botões</h3>
-                      <p className="text-[10px] text-muted-foreground md:text-xs">
-                        Nome, subtítulo e textos dos botões.
-                      </p>
-                    </div>
-                  </div>
-                  <div className="grid gap-2 md:grid-cols-2 md:gap-3">
-                    <div className="space-y-1">
-                      <p className="text-[10px] font-medium text-muted-foreground">Nome do perfil</p>
-                      <Input
-                        placeholder="Nome do perfil"
-                        value={panelConfig.profileName}
-                        onChange={(e) =>
-                          setPanelConfig({ ...panelConfig, profileName: e.target.value })
-                        }
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <p className="text-[10px] font-medium text-muted-foreground">Subtítulo</p>
-                      <Input
-                        placeholder="Subtítulo do perfil"
-                        value={panelConfig.profileSubtitle}
-                        onChange={(e) =>
-                          setPanelConfig({ ...panelConfig, profileSubtitle: e.target.value })
-                        }
-                      />
-                    </div>
-                  </div>
-                  <div className="grid gap-2 md:grid-cols-2 md:gap-3">
-                    <div className="space-y-1">
-                      <p className="text-[10px] font-medium text-muted-foreground">Texto botão principal</p>
-                      <Input
-                        placeholder="Ex: Assinar agora"
-                        value={panelConfig.primaryPlanLabel}
-                        onChange={(e) =>
-                          setPanelConfig({ ...panelConfig, primaryPlanLabel: e.target.value })
-                        }
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <p className="text-[10px] font-medium text-muted-foreground">Preço botão principal</p>
-                      <Input
-                        placeholder="Ex: R$ 29,90"
-                        value={panelConfig.primaryPlanPriceText}
-                        onChange={(e) =>
-                          setPanelConfig({ ...panelConfig, primaryPlanPriceText: e.target.value })
-                        }
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <p className="text-[10px] font-medium text-muted-foreground">Texto botão WhatsApp</p>
-                      <Input
-                        placeholder="Ex: Chamar no WhatsApp"
-                        value={panelConfig.whatsappButtonLabel}
-                        onChange={(e) =>
-                          setPanelConfig({ ...panelConfig, whatsappButtonLabel: e.target.value })
-                        }
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <p className="text-[10px] font-medium text-muted-foreground">Preço botão WhatsApp</p>
-                      <Input
-                        placeholder="Ex: R$ 150,00"
-                        value={panelConfig.whatsappButtonPriceText}
-                        onChange={(e) =>
-                          setPanelConfig({ ...panelConfig, whatsappButtonPriceText: e.target.value })
-                        }
-                      />
-                    </div>
-                  </div>
-                </Card>
-
-                {/* Fotos e banner */}
-                <Card className="space-y-2.5 p-3 md:space-y-3 md:p-4">
-                  <div className="flex items-center gap-2">
-                    <div className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-primary/10 md:h-8 md:w-8">
-                      <Image className="h-3 w-3 text-primary md:h-4 md:w-4" />
-                    </div>
-                    <div>
-                      <h3 className="text-xs font-semibold md:text-sm">Fotos e banner</h3>
-                      <p className="text-[10px] text-muted-foreground md:text-xs">
-                        Imagem de capa, foto de perfil e foto de grid.
-                      </p>
-                    </div>
-                  </div>
-                  <div className="space-y-2 md:space-y-3">
-                    <div className="space-y-1">
-                      <p className="text-[10px] font-medium text-muted-foreground">Banner principal</p>
-                      <Input
-                        type="file"
-                        accept="image/*"
-                        onChange={handleImageUpload("heroBannerUrl")}
-                        className="cursor-pointer"
-                      />
-                      <p className="text-[10px] text-muted-foreground">
-                        Faça o upload da imagem de capa. Não precisa de link.
-                      </p>
+                  {/* Textos e botões */}
+                  <Card className="space-y-2.5 p-3 md:space-y-3 md:p-4">
+                    <div className="flex items-center gap-2">
+                      <div className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-primary/10 md:h-8 md:w-8">
+                        <Type className="h-3 w-3 text-primary md:h-4 md:w-4" />
+                      </div>
+                      <div>
+                        <h3 className="text-xs font-semibold md:text-sm">Textos e botões</h3>
+                        <p className="text-[10px] text-muted-foreground md:text-xs">
+                          Nome, subtítulo e textos dos botões.
+                        </p>
+                      </div>
                     </div>
                     <div className="grid gap-2 md:grid-cols-2 md:gap-3">
                       <div className="space-y-1">
-                        <p className="text-[10px] font-medium text-muted-foreground">Foto de perfil</p>
+                        <p className="text-[10px] font-medium text-muted-foreground">Nome do perfil</p>
+                        <Input
+                          placeholder="Nome do perfil"
+                          value={panelConfig.profileName}
+                          onChange={(e) =>
+                            setPanelConfig({ ...panelConfig, profileName: e.target.value })
+                          }
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-[10px] font-medium text-muted-foreground">Subtítulo</p>
+                        <Input
+                          placeholder="Subtítulo do perfil"
+                          value={panelConfig.profileSubtitle}
+                          onChange={(e) =>
+                            setPanelConfig({ ...panelConfig, profileSubtitle: e.target.value })
+                          }
+                        />
+                      </div>
+                    </div>
+                    <div className="grid gap-2 md:grid-cols-2 md:gap-3">
+                      <div className="space-y-1">
+                        <p className="text-[10px] font-medium text-muted-foreground">Texto botão principal</p>
+                        <Input
+                          placeholder="Ex: Assinar agora"
+                          value={panelConfig.primaryPlanLabel}
+                          onChange={(e) =>
+                            setPanelConfig({ ...panelConfig, primaryPlanLabel: e.target.value })
+                          }
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-[10px] font-medium text-muted-foreground">Preço botão principal</p>
+                        <Input
+                          placeholder="Ex: R$ 29,90"
+                          value={panelConfig.primaryPlanPriceText}
+                          onChange={(e) =>
+                            setPanelConfig({ ...panelConfig, primaryPlanPriceText: e.target.value })
+                          }
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-[10px] font-medium text-muted-foreground">Texto botão WhatsApp</p>
+                        <Input
+                          placeholder="Ex: Chamar no WhatsApp"
+                          value={panelConfig.whatsappButtonLabel}
+                          onChange={(e) =>
+                            setPanelConfig({ ...panelConfig, whatsappButtonLabel: e.target.value })
+                          }
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-[10px] font-medium text-muted-foreground">Preço botão WhatsApp</p>
+                        <Input
+                          placeholder="Ex: R$ 150,00"
+                          value={panelConfig.whatsappButtonPriceText}
+                          onChange={(e) =>
+                            setPanelConfig({ ...panelConfig, whatsappButtonPriceText: e.target.value })
+                          }
+                        />
+                      </div>
+                    </div>
+                  </Card>
+
+                  {/* Fotos e banner */}
+                  <Card className="space-y-2.5 p-3 md:space-y-3 md:p-4">
+                    <div className="flex items-center gap-2">
+                      <div className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-primary/10 md:h-8 md:w-8">
+                        <Image className="h-3 w-3 text-primary md:h-4 md:w-4" />
+                      </div>
+                      <div>
+                        <h3 className="text-xs font-semibold md:text-sm">Fotos e banner</h3>
+                        <p className="text-[10px] text-muted-foreground md:text-xs">
+                          Imagem de capa, foto de perfil e foto de grid. (Máximo 5MB)
+                        </p>
+                      </div>
+                    </div>
+                    <div className="space-y-2 md:space-y-3">
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between">
+                          <p className="text-[10px] font-medium text-muted-foreground">Banner principal</p>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 px-2 text-[10px] text-destructive hover:text-destructive"
+                            onClick={() => handleRemoveMedia("heroBannerUrl")}
+                          >
+                            <Trash2 className="h-3 w-3 mr-1" />
+                            Remover
+                          </Button>
+                        </div>
                         <Input
                           type="file"
                           accept="image/*"
-                          onChange={handleImageUpload("profileImageUrl")}
+                          onChange={handleImageUpload("heroBannerUrl")}
+                          className="cursor-pointer"
+                        />
+                      </div>
+                      <div className="grid gap-2 md:grid-cols-2 md:gap-3">
+                        <div className="space-y-1">
+                          <div className="flex items-center justify-between">
+                            <p className="text-[10px] font-medium text-muted-foreground">Foto de perfil</p>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 px-2 text-[10px] text-destructive hover:text-destructive"
+                              onClick={() => handleRemoveMedia("profileImageUrl")}
+                            >
+                              <Trash2 className="h-3 w-3 mr-1" />
+                              Remover
+                            </Button>
+                          </div>
+                          <Input
+                            type="file"
+                            accept="image/*"
+                            onChange={handleImageUpload("profileImageUrl")}
+                            className="cursor-pointer"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <div className="flex items-center justify-between">
+                            <p className="text-[10px] font-medium text-muted-foreground">Foto de grid/feed</p>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 px-2 text-[10px] text-destructive hover:text-destructive"
+                              onClick={() => handleRemoveMedia("gridImageUrl")}
+                            >
+                              <Trash2 className="h-3 w-3 mr-1" />
+                              Remover
+                            </Button>
+                          </div>
+                          <Input
+                            type="file"
+                            accept="image/*"
+                            onChange={handleImageUpload("gridImageUrl")}
+                            className="cursor-pointer"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </Card>
+
+                  {/* Vídeos */}
+                  <Card className="space-y-2.5 p-3 md:space-y-3 md:p-4">
+                    <div className="flex items-center gap-2">
+                      <div className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-primary/10 md:h-8 md:w-8">
+                        <Video className="h-3 w-3 text-primary md:h-4 md:w-4" />
+                      </div>
+                      <div>
+                        <h3 className="text-xs font-semibold md:text-sm">Vídeos de prévia</h3>
+                        <p className="text-[10px] text-muted-foreground md:text-xs">
+                          Vídeos que aparecem na parte de baixo da página. (Máximo 50MB)
+                        </p>
+                      </div>
+                    </div>
+                    <div className="space-y-2 md:space-y-3">
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between">
+                          <p className="text-[10px] font-medium text-muted-foreground">Vídeo principal</p>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 px-2 text-[10px] text-destructive hover:text-destructive"
+                            onClick={() => handleRemoveMedia("mainTeaserVideoUrl")}
+                          >
+                            <Trash2 className="h-3 w-3 mr-1" />
+                            Remover
+                          </Button>
+                        </div>
+                        <Input
+                          type="file"
+                          accept="video/*"
+                          onChange={handleImageUpload("mainTeaserVideoUrl")}
                           className="cursor-pointer"
                         />
                       </div>
                       <div className="space-y-1">
-                        <p className="text-[10px] font-medium text-muted-foreground">Foto de grid/feed</p>
+                        <div className="flex items-center justify-between">
+                          <p className="text-[10px] font-medium text-muted-foreground">Segundo vídeo</p>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 px-2 text-[10px] text-destructive hover:text-destructive"
+                            onClick={() => handleRemoveMedia("secondaryTeaserVideoUrl")}
+                          >
+                            <Trash2 className="h-3 w-3 mr-1" />
+                            Remover
+                          </Button>
+                        </div>
                         <Input
                           type="file"
-                          accept="image/*"
-                          onChange={handleImageUpload("gridImageUrl")}
+                          accept="video/*"
+                          onChange={handleImageUpload("secondaryTeaserVideoUrl")}
                           className="cursor-pointer"
                         />
                       </div>
                     </div>
-                  </div>
-                </Card>
+                  </Card>
 
-                {/* Vídeos */}
-                <Card className="space-y-2.5 p-3 md:space-y-3 md:p-4">
-                  <div className="flex items-center gap-2">
-                    <div className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-primary/10 md:h-8 md:w-8">
-                      <Video className="h-3 w-3 text-primary md:h-4 md:w-4" />
+                  {/* Métricas da capa */}
+                  <Card className="space-y-2.5 p-3 md:space-y-3 md:p-4">
+                    <div className="flex items-center gap-2">
+                      <div className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-primary/10 md:h-8 md:w-8">
+                        <TrendingUp className="h-3 w-3 text-primary md:h-4 md:w-4" />
+                      </div>
+                      <div>
+                        <h3 className="text-xs font-semibold md:text-sm">Métricas da capa</h3>
+                        <p className="text-[10px] text-muted-foreground md:text-xs">
+                          Números que aparecem em cima do banner (posts e likes).
+                        </p>
+                      </div>
                     </div>
-                    <div>
-                      <h3 className="text-xs font-semibold md:text-sm">Vídeos de prévia</h3>
-                      <p className="text-[10px] text-muted-foreground md:text-xs">
-                        Faça upload dos vídeos que aparecem na parte de baixo da página.
-                      </p>
+                    <div className="grid gap-2 md:grid-cols-2 md:gap-3">
+                      <div className="space-y-1">
+                        <p className="text-[10px] font-medium text-muted-foreground">Número de posts</p>
+                        <Input
+                          placeholder="Ex: 744"
+                          value={panelConfig.heroPostsCount}
+                          onChange={(e) =>
+                            setPanelConfig({ ...panelConfig, heroPostsCount: e.target.value })
+                          }
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-[10px] font-medium text-muted-foreground">Número de likes</p>
+                        <Input
+                          placeholder="Ex: 370k"
+                          value={panelConfig.heroLikesCount}
+                          onChange={(e) =>
+                            setPanelConfig({ ...panelConfig, heroLikesCount: e.target.value })
+                          }
+                        />
+                      </div>
                     </div>
-                  </div>
-                  <div className="space-y-2 md:space-y-3">
-                    <div className="space-y-1">
-                      <p className="text-[10px] font-medium text-muted-foreground">Vídeo principal</p>
-                      <Input
-                        type="file"
-                        accept="video/*"
-                        onChange={handleImageUpload("mainTeaserVideoUrl")}
-                        className="cursor-pointer"
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <p className="text-[10px] font-medium text-muted-foreground">Segundo vídeo</p>
-                      <Input
-                        type="file"
-                        accept="video/*"
-                        onChange={handleImageUpload("secondaryTeaserVideoUrl")}
-                        className="cursor-pointer"
-                      />
-                    </div>
-                  </div>
-                </Card>
+                  </Card>
 
-                {/* Métricas da capa */}
-                <Card className="space-y-2.5 p-3 md:space-y-3 md:p-4">
-                  <div className="flex items-center gap-2">
-                    <div className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-primary/10 md:h-8 md:w-8">
-                      <TrendingUp className="h-3 w-3 text-primary md:h-4 md:w-4" />
-                    </div>
-                    <div>
-                      <h3 className="text-xs font-semibold md:text-sm">Métricas da capa</h3>
-                      <p className="text-[10px] text-muted-foreground md:text-xs">
-                        Números que aparecem em cima do banner (posts e likes).
-                      </p>
-                    </div>
+                  {/* Aviso importante */}
+                  <div className="rounded-lg border border-yellow-500/30 bg-yellow-500/10 p-3 text-[11px] text-yellow-600 dark:text-yellow-400">
+                    <p className="font-semibold">⚠️ Importante sobre vídeos e imagens:</p>
+                    <p className="mt-1">
+                      Vídeos e imagens são salvos apenas no seu navegador (localStorage). 
+                      Para que apareçam para todos os visitantes, você precisa hospedar os arquivos 
+                      em um serviço externo e usar os links.
+                    </p>
                   </div>
-                  <div className="grid gap-2 md:grid-cols-2 md:gap-3">
-                    <div className="space-y-1">
-                      <p className="text-[10px] font-medium text-muted-foreground">Número de posts</p>
-                      <Input
-                        placeholder="Ex: 744"
-                        value={panelConfig.heroPostsCount}
-                        onChange={(e) =>
-                          setPanelConfig({ ...panelConfig, heroPostsCount: e.target.value })
-                        }
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <p className="text-[10px] font-medium text-muted-foreground">Número de likes</p>
-                      <Input
-                        placeholder="Ex: 370k"
-                        value={panelConfig.heroLikesCount}
-                        onChange={(e) =>
-                          setPanelConfig({ ...panelConfig, heroLikesCount: e.target.value })
-                        }
-                      />
-                    </div>
-                  </div>
-                </Card>
-
-              </div>
+                </div>
+              )}
             </div>
           </section>
         </div>

@@ -2,8 +2,8 @@ import banner from "@/assets/banner-user-2.jpg";
 import profileBolzani from "@/assets/profile-bolzani.jpg";
 import teaserMain from "@/assets/teaser-bolzani-1.mp4";
 import teaserAlt1 from "@/assets/kamy02.mp4";
-import teaserAlt2 from "@/assets/kamy03.mp4";
 import bolzaniGrid from "@/assets/bolzani-instagram-grid.jpg";
+import { supabase } from "@/integrations/supabase/client";
 
 export const SITE_CONFIG_STORAGE_KEY = "site_admin_config_v1";
 
@@ -47,6 +47,90 @@ export const defaultSiteConfig: SiteConfig = {
   whatsappButtonBgColor: "",
 };
 
+// Campos que não devem ser salvos no banco (são muito grandes ou são assets locais)
+const LOCAL_ONLY_FIELDS: (keyof SiteConfig)[] = [
+  "heroBannerUrl",
+  "profileImageUrl", 
+  "mainTeaserVideoUrl",
+  "secondaryTeaserVideoUrl",
+  "gridImageUrl",
+];
+
+// Carrega configurações do banco de dados
+export const loadSiteConfigFromDB = async (): Promise<SiteConfig> => {
+  try {
+    const { data, error } = await supabase
+      .from("site_config")
+      .select("config_key, config_value");
+
+    if (error) {
+      console.error("Erro ao carregar configurações do banco:", error);
+      return defaultSiteConfig;
+    }
+
+    if (!data || data.length === 0) {
+      return defaultSiteConfig;
+    }
+
+    const configFromDB: Partial<SiteConfig> = {};
+    for (const row of data) {
+      (configFromDB as any)[row.config_key] = row.config_value;
+    }
+
+    return { ...defaultSiteConfig, ...configFromDB };
+  } catch (error) {
+    console.error("Erro ao carregar configurações:", error);
+    return defaultSiteConfig;
+  }
+};
+
+// Salva configurações no banco de dados
+export const saveSiteConfigToDB = async (config: SiteConfig): Promise<boolean> => {
+  try {
+    const entries = Object.entries(config).filter(
+      ([key, value]) => 
+        !LOCAL_ONLY_FIELDS.includes(key as keyof SiteConfig) && 
+        value !== defaultSiteConfig[key as keyof SiteConfig]
+    );
+
+    // Upsert cada configuração
+    for (const [key, value] of entries) {
+      const { error } = await supabase
+        .from("site_config")
+        .upsert(
+          { config_key: key, config_value: String(value) },
+          { onConflict: "config_key" }
+        );
+
+      if (error) {
+        console.error(`Erro ao salvar ${key}:`, error);
+      }
+    }
+
+    // Remove configurações que voltaram ao padrão
+    const keysToRemove = Object.entries(config)
+      .filter(
+        ([key, value]) => 
+          !LOCAL_ONLY_FIELDS.includes(key as keyof SiteConfig) && 
+          value === defaultSiteConfig[key as keyof SiteConfig]
+      )
+      .map(([key]) => key);
+
+    if (keysToRemove.length > 0) {
+      await supabase
+        .from("site_config")
+        .delete()
+        .in("config_key", keysToRemove);
+    }
+
+    return true;
+  } catch (error) {
+    console.error("Erro ao salvar configurações:", error);
+    return false;
+  }
+};
+
+// Funções legadas mantidas para compatibilidade (agora usam apenas localStorage para assets locais)
 export const loadSiteConfig = (): SiteConfig => {
   if (typeof window === "undefined") return defaultSiteConfig;
 
@@ -64,5 +148,21 @@ export const loadSiteConfig = (): SiteConfig => {
 export const saveSiteConfig = (config: SiteConfig) => {
   if (typeof window === "undefined") return;
 
-  window.localStorage.setItem(SITE_CONFIG_STORAGE_KEY, JSON.stringify(config));
+  // Salva apenas os campos de mídia local no localStorage
+  const localConfig: Partial<SiteConfig> = {};
+  for (const field of LOCAL_ONLY_FIELDS) {
+    if (config[field] !== defaultSiteConfig[field]) {
+      localConfig[field] = config[field];
+    }
+  }
+
+  window.localStorage.setItem(SITE_CONFIG_STORAGE_KEY, JSON.stringify(localConfig));
+};
+
+// Remove um campo de mídia específico (volta ao padrão)
+export const resetMediaField = (field: keyof SiteConfig): SiteConfig => {
+  const current = loadSiteConfig();
+  const updated = { ...current, [field]: defaultSiteConfig[field] };
+  saveSiteConfig(updated);
+  return updated;
 };

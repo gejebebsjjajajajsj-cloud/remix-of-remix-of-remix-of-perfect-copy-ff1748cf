@@ -1,21 +1,13 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import banner from "@/assets/banner-user-2.jpg";
-import blurHero from "@/assets/blur_7.jpg";
 import logo from "@/assets/logo.svg";
 import logoMobile from "@/assets/logo_mobile.svg";
 import chatIcon from "@/assets/chat.svg";
-import teaser01 from "@/assets/kamy02.mp4";
-import teaser02 from "@/assets/kamy03.mp4";
-import teaserHighlight from "@/assets/teaser-bolzani-1.mp4";
-import profileBolzani from "@/assets/profile-bolzani.jpg";
-import bolzaniGrid from "@/assets/bolzani-instagram-grid.jpg";
-import { Lock, PlayCircle } from "lucide-react";
+import { Lock } from "lucide-react";
 
-import { loadSiteConfig, SiteConfig } from "@/config/siteConfig";
+import { loadSiteConfigFromDB, loadSiteConfig, defaultSiteConfig, SiteConfig } from "@/config/siteConfig";
 
 const subscriptionPlansFromConfig = (config: SiteConfig) => [
   {
@@ -26,8 +18,6 @@ const subscriptionPlansFromConfig = (config: SiteConfig) => [
 ];
 
 const Index = () => {
-  const navigate = useNavigate();
-
   const [pixModalOpen, setPixModalOpen] = useState(false);
   const [isLoadingPix, setIsLoadingPix] = useState(false);
   const [pixQrBase64, setPixQrBase64] = useState<string | null>(null);
@@ -35,13 +25,53 @@ const Index = () => {
   const [pixError, setPixError] = useState<string | null>(null);
   const [currentOrderId, setCurrentOrderId] = useState<string | null>(null);
   const [currentOrderType, setCurrentOrderType] = useState<"subscription" | "whatsapp" | null>(null);
-  const [showWhatsappAccessModal, setShowWhatsappAccessModal] = useState(false);
   
   // CPF input state
   const [showCpfModal, setShowCpfModal] = useState(false);
   const [cpfInput, setCpfInput] = useState("");
   const [pendingProduct, setPendingProduct] = useState<"mensalidade" | "whatsapp" | null>(null);
-  const [siteConfig, setSiteConfig] = useState<SiteConfig>(() => loadSiteConfig());
+  const [siteConfig, setSiteConfig] = useState<SiteConfig>(defaultSiteConfig);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Carrega configurações do banco de dados + localStorage
+  useEffect(() => {
+    const loadConfig = async () => {
+      setIsLoading(true);
+      try {
+        // Carrega do banco de dados (textos, cores, etc)
+        const dbConfig = await loadSiteConfigFromDB();
+        // Carrega do localStorage (mídias locais - apenas para o admin)
+        const localConfig = loadSiteConfig();
+        // Combina: banco tem prioridade para textos, local para mídias apenas se diferente do padrão
+        const mergedConfig = { ...dbConfig };
+        
+        // Usa mídias do localStorage apenas se foram alteradas
+        if (localConfig.heroBannerUrl !== defaultSiteConfig.heroBannerUrl) {
+          mergedConfig.heroBannerUrl = localConfig.heroBannerUrl;
+        }
+        if (localConfig.profileImageUrl !== defaultSiteConfig.profileImageUrl) {
+          mergedConfig.profileImageUrl = localConfig.profileImageUrl;
+        }
+        if (localConfig.mainTeaserVideoUrl !== defaultSiteConfig.mainTeaserVideoUrl) {
+          mergedConfig.mainTeaserVideoUrl = localConfig.mainTeaserVideoUrl;
+        }
+        if (localConfig.secondaryTeaserVideoUrl !== defaultSiteConfig.secondaryTeaserVideoUrl) {
+          mergedConfig.secondaryTeaserVideoUrl = localConfig.secondaryTeaserVideoUrl;
+        }
+        if (localConfig.gridImageUrl !== defaultSiteConfig.gridImageUrl) {
+          mergedConfig.gridImageUrl = localConfig.gridImageUrl;
+        }
+        
+        setSiteConfig(mergedConfig);
+      } catch (error) {
+        console.error("Erro ao carregar configurações:", error);
+        setSiteConfig(defaultSiteConfig);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    loadConfig();
+  }, []);
 
   useEffect(() => {
     // Track page visit
@@ -65,14 +95,12 @@ const Index = () => {
           const newStatus = (payload.new as any).status;
           if (newStatus === "paid") {
             if (currentOrderType === "whatsapp") {
-              // Redireciona para o grupo VIP de R$150 após pagamento aprovado
               window.open(
                 "https://chat.whatsapp.com/LgkcC3dkAt908VyoilclWv",
                 "_blank",
                 "noopener,noreferrer",
               );
             } else if (currentOrderType === "subscription") {
-              // Redireciona para o grupo de assinantes após pagamento aprovado
               window.open(
                 "https://chat.whatsapp.com/ED0zKAGCwMGCydFzuJpYa9",
                 "_blank",
@@ -163,6 +191,7 @@ const Index = () => {
       setIsLoadingPix(false);
     }
   };
+
   const handleCopyPixCode = async () => {
     if (!pixCode) return;
     try {
@@ -172,6 +201,14 @@ const Index = () => {
       console.error("Erro ao copiar código PIX:", error);
     }
   };
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="animate-pulse text-muted-foreground">Carregando...</div>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -204,7 +241,7 @@ const Index = () => {
         </header>
 
         <section className="container space-y-4 pb-16 pt-4">
-          {/* Faixa de capa com contadores, similar ao original */}
+          {/* Faixa de capa com contadores */}
           <div
             className="relative flex h-40 items-end justify-end overflow-hidden rounded-3xl bg-cover bg-center bg-no-repeat md:h-48"
             style={{
@@ -228,7 +265,7 @@ const Index = () => {
           </div>
 
           <div className="flex flex-col gap-6 md:grid md:grid-cols-[auto,minmax(0,1fr)] md:items-start">
-            {/* Avatar + nome, inspirado no perfil original */}
+            {/* Avatar + nome */}
             <section
               aria-labelledby="perfil-heading"
               className="flex flex-col items-start gap-4 md:flex-row md:items-center"
@@ -237,7 +274,7 @@ const Index = () => {
                 <div className="relative inline-flex items-center justify-center rounded-full border-4 border-destructive shadow-[0_0_20px_rgba(248,113,113,0.8)]">
                   <img
                     src={siteConfig.profileImageUrl}
-                    alt="Foto de perfil de Bolzani"
+                    alt="Foto de perfil"
                     className="h-24 w-24 rounded-full object-cover md:h-28 md:w-28"
                     loading="lazy"
                   />
@@ -265,7 +302,7 @@ const Index = () => {
               </div>
             </section>
 
-            {/* Cartão de planos com botão que abre o PIX TriboPay */}
+            {/* Cartão de planos */}
             <section aria-labelledby="planos-heading" className="space-y-4">
               <header className="space-y-1 text-left">
                 <p className="text-xs font-semibold uppercase tracking-[0.28em] text-primary">
@@ -274,7 +311,7 @@ const Index = () => {
               </header>
 
               <div className="mt-2 space-y-3">
-              {subscriptionPlansFromConfig(siteConfig).map((plan) => (
+                {subscriptionPlansFromConfig(siteConfig).map((plan) => (
                   <Button
                     key={plan.label}
                     variant="cta"
@@ -287,20 +324,20 @@ const Index = () => {
                   </Button>
                 ))}
 
-              <Button
-                variant="whatsapp"
-                className="flex w-full items-center justify-between rounded-2xl px-5 py-4 text-base font-semibold shadow-lg shadow-emerald-500/40 md:text-lg"
-                style={siteConfig.whatsappButtonBgColor ? { backgroundColor: siteConfig.whatsappButtonBgColor } : undefined}
-                onClick={() => {
-                  trackEvent("click_whatsapp");
-                  handleOpenCpfModal("whatsapp");
-                }}
-              >
-                <span>{siteConfig.whatsappButtonLabel}</span>
-                <span className="flex items-center gap-2 text-sm font-semibold">
-                  {siteConfig.whatsappButtonPriceText}
-                </span>
-              </Button>
+                <Button
+                  variant="whatsapp"
+                  className="flex w-full items-center justify-between rounded-2xl px-5 py-4 text-base font-semibold shadow-lg shadow-emerald-500/40 md:text-lg"
+                  style={siteConfig.whatsappButtonBgColor ? { backgroundColor: siteConfig.whatsappButtonBgColor } : undefined}
+                  onClick={() => {
+                    trackEvent("click_whatsapp");
+                    handleOpenCpfModal("whatsapp");
+                  }}
+                >
+                  <span>{siteConfig.whatsappButtonLabel}</span>
+                  <span className="flex items-center gap-2 text-sm font-semibold">
+                    {siteConfig.whatsappButtonPriceText}
+                  </span>
+                </Button>
               </div>
 
               <p className="flex items-center gap-2 text-[0.7rem] text-muted-foreground">
@@ -320,7 +357,7 @@ const Index = () => {
         className="border-t border-border/60 bg-gradient-to-b from-background to-background/40"
       >
         <div className="container space-y-8 py-10">
-          <div className="grid gap-4" aria-label="Prévia em vídeo do conteúdo da Kamylinha">
+          <div className="grid gap-4" aria-label="Prévia em vídeo do conteúdo">
             <figure className="card-elevated overflow-hidden rounded-3xl">
               <video
                 src={siteConfig.mainTeaserVideoUrl}
@@ -334,11 +371,11 @@ const Index = () => {
 
           <figure
             className="card-elevated overflow-hidden rounded-3xl"
-            aria-label="Prévia em foto do feed da Bolzani"
+            aria-label="Prévia em foto do feed"
           >
             <img
               src={siteConfig.gridImageUrl}
-              alt="Prévia do feed da Bolzani com três fotos lado a lado"
+              alt="Prévia do feed com fotos"
               className="h-full w-full object-cover"
               loading="lazy"
             />
@@ -408,7 +445,6 @@ const Index = () => {
             </p>
           )}
 
-
           {!isLoadingPix && (pixQrBase64 || pixCode) && (
             <div className="mt-4 space-y-4">
               {pixQrBase64 && (
@@ -430,71 +466,30 @@ const Index = () => {
                   </p>
                   <div className="flex flex-col gap-2 rounded-2xl border border-border bg-muted/40 p-2">
                     <textarea
-                      className="max-h-24 min-h-[72px] w-full resize-none rounded-xl border border-border/60 bg-background px-3 py-2 text-xs text-foreground"
                       readOnly
                       value={pixCode}
+                      rows={3}
+                      className="w-full resize-none border-none bg-transparent text-center text-xs text-foreground focus:outline-none"
                     />
                     <Button
+                      variant="outline"
                       size="sm"
-                      variant="cta"
-                      className="self-stretch hover-scale text-sm font-semibold"
+                      className="w-full rounded-xl text-xs"
                       onClick={handleCopyPixCode}
                     >
-                      Copiar código PIX
+                      Copiar código
                     </Button>
                   </div>
                 </div>
               )}
-
-              <div className="mt-1 flex items-center justify-between text-[0.7rem] text-muted-foreground">
-                <span>
-                  Status: <span className="font-semibold text-primary">Aguardando pagamento</span>
-                </span>
-                <span className="flex items-center gap-1">
-                  <Lock className="h-3 w-3" aria-hidden="true" />
-                  <span>Ambiente protegido</span>
-                </span>
-              </div>
             </div>
           )}
         </DialogContent>
       </Dialog>
 
-      <Dialog open={showWhatsappAccessModal} onOpenChange={setShowWhatsappAccessModal}>
-        <DialogContent className="max-w-sm animate-enter rounded-3xl border border-border bg-background/95 px-6 py-5 shadow-xl shadow-emerald-500/30">
-          <DialogHeader className="space-y-2 text-center">
-            <p className="text-[0.7rem] font-semibold uppercase tracking-[0.25em] text-emerald-400">
-              pagamento aprovado
-            </p>
-            <DialogTitle className="text-lg font-semibold tracking-tight">
-              Acesso liberado ao grupo VIP
-            </DialogTitle>
-            <p className="text-xs text-muted-foreground">
-              Seu pagamento de R$ 150,00 foi confirmado. Clique no botão abaixo para entrar agora no grupo
-              exclusivo do WhatsApp.
-            </p>
-          </DialogHeader>
-
-          <div className="mt-4 flex flex-col gap-3">
-            <Button
-              variant="whatsapp"
-              className="w-full justify-center rounded-2xl px-5 py-3 text-sm font-semibold shadow-lg shadow-emerald-500/40"
-              asChild
-            >
-              <a
-                href="https://chat.whatsapp.com/LgkcC3dkAt908VyoilclWv"
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                Entrar no grupo do WhatsApp
-              </a>
-            </Button>
-            <p className="text-[0.7rem] text-muted-foreground text-center">
-              Guarde este link em um lugar seguro. Ele é o seu acesso direto ao grupo exclusivo.
-            </p>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <footer className="border-t border-border/40 py-4 text-center text-[0.65rem] text-muted-foreground">
+        <p>© {new Date().getFullYear()} Privacy. Todos os direitos reservados.</p>
+      </footer>
     </div>
   );
 };
