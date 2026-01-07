@@ -1,5 +1,5 @@
 import banner from "@/assets/banner-user-2.jpg";
-import profileBolzani from "@/assets/profile-bolzani.jpg";
+import profilePhoto from "@/assets/profile-photo.png";
 import teaserMain from "@/assets/teaser-bolzani-1.mp4";
 import teaserAlt1 from "@/assets/kamy02.mp4";
 import bolzaniGrid from "@/assets/bolzani-instagram-grid.jpg";
@@ -50,7 +50,7 @@ export const defaultSiteConfig: SiteConfig = {
   heroLikesCount: "370k",
   profileName: "Tainá Costa",
   profileSubtitle: "Conteúdo adulto exclusivo",
-  profileImageUrl: profileBolzani,
+  profileImageUrl: profilePhoto,
   primaryPlanLabel: "Assinar (30 dias)",
   primaryPlanPriceText: "R$ 29,90",
   primaryPlanHref: "https://pay.privecy.com.br/checkout/2985a976-e091-4962-a8ca-c61e446f8387",
