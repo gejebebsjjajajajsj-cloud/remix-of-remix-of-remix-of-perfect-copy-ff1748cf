@@ -17,7 +17,6 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { defaultSiteConfig, loadSiteConfig, saveSiteConfig, SiteConfig } from "@/config/siteConfig";
-import { PushinPayConfigForm } from "@/components/PushinPayConfigForm";
 import { supabase } from "@/integrations/supabase/client";
 
 const ADMIN_PASSWORD = "admin123"; // Altere para uma senha segura
@@ -611,21 +610,6 @@ const Admin = () => {
                   </div>
                 </Card>
 
-                {/* Configuração PushinPay */}
-                <Card className="space-y-2.5 p-3 md:space-y-3 md:p-4">
-                  <div className="flex items-center gap-2">
-                    <div className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-primary/10 md:h-8 md:w-8">
-                      <DollarSign className="h-3 w-3 text-primary md:h-4 md:w-4" />
-                    </div>
-                    <div>
-                      <h3 className="text-xs font-semibold md:text-sm">PushinPay - PIX</h3>
-                      <p className="text-[10px] text-muted-foreground md:text-xs">
-                        Configure o token e o ambiente usados para gerar o PIX. O token é salvo apenas no backend e nunca aparece no site público.
-                      </p>
-                    </div>
-                  </div>
-                  <PushinPayConfigForm />
-                </Card>
               </div>
             </div>
           </section>

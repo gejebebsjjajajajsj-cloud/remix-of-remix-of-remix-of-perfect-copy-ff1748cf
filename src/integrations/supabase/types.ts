@@ -62,30 +62,6 @@ export type Database = {
         }
         Relationships: []
       }
-      pushinpay_config: {
-        Row: {
-          created_at: string
-          environment: string
-          id: string
-          token: string
-          updated_at: string
-        }
-        Insert: {
-          created_at?: string
-          environment?: string
-          id?: string
-          token: string
-          updated_at?: string
-        }
-        Update: {
-          created_at?: string
-          environment?: string
-          id?: string
-          token?: string
-          updated_at?: string
-        }
-        Relationships: []
-      }
     }
     Views: {
       [_ in never]: never

@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import banner from "@/assets/banner-user-2.jpg";
@@ -37,6 +39,12 @@ const Index = () => {
   const [currentOrderType, setCurrentOrderType] = useState<"subscription" | "whatsapp" | null>(null);
   const [showWhatsappAccessModal, setShowWhatsappAccessModal] = useState(false);
   const [siteConfig, setSiteConfig] = useState<SiteConfig>(() => loadSiteConfig());
+  
+  // Campos do formulário TriboPay
+  const [formName, setFormName] = useState("");
+  const [formEmail, setFormEmail] = useState("");
+  const [formCpf, setFormCpf] = useState("");
+  const [pendingProduct, setPendingProduct] = useState<"mensalidade" | "whatsapp" | null>(null);
 
   useEffect(() => {
     // Track page visit
@@ -88,18 +96,57 @@ const Index = () => {
     supabase.from("analytics_events").insert({ event_type: eventType });
   };
 
-  const handlePixCheckout = async (product: "mensalidade" | "whatsapp") => {
+  const openPixForm = (product: "mensalidade" | "whatsapp") => {
+    setPendingProduct(product);
+    setFormName("");
+    setFormEmail("");
+    setFormCpf("");
+    setPixError(null);
+    setPixQrBase64(null);
+    setPixCode(null);
+    setPixModalOpen(true);
+  };
+
+  const formatCpf = (value: string) => {
+    const digits = value.replace(/\D/g, "").slice(0, 11);
+    if (digits.length <= 3) return digits;
+    if (digits.length <= 6) return `${digits.slice(0, 3)}.${digits.slice(3)}`;
+    if (digits.length <= 9) return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6)}`;
+    return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 9)}-${digits.slice(9)}`;
+  };
+
+  const handlePixCheckout = async () => {
+    if (!pendingProduct) return;
+    
+    if (!formName.trim() || !formEmail.trim() || !formCpf.trim()) {
+      setPixError("Preencha todos os campos.");
+      return;
+    }
+
+    const cleanCpf = formCpf.replace(/\D/g, "");
+    if (cleanCpf.length !== 11) {
+      setPixError("CPF deve ter 11 dígitos.");
+      return;
+    }
+
     try {
       setPixError(null);
       setIsLoadingPix(true);
-      setPixModalOpen(true);
 
-      const { data, error } = await supabase.functions.invoke("pushinpay-create-pix", {
-        body: { product },
+      const amount = pendingProduct === "whatsapp" ? 15000 : 2990;
+
+      const { data, error } = await supabase.functions.invoke("tribopay-create-pix", {
+        body: {
+          name: formName.trim(),
+          email: formEmail.trim(),
+          document: cleanCpf,
+          amount,
+          type: pendingProduct === "whatsapp" ? "whatsapp" : "subscription",
+        },
       });
 
       if (error || !data || typeof data !== "object") {
-        console.error("Erro ao gerar PIX PushinPay:", error || data);
+        console.error("Erro ao gerar PIX TriboPay:", error || data);
         setPixError(
           (data as any)?.error ||
             "Não foi possível gerar o pagamento PIX. Tente novamente em alguns minutos.",
@@ -108,15 +155,18 @@ const Index = () => {
       }
 
       const anyData = data as any;
-      if (!anyData.qr_code_base64 || !anyData.qr_code) {
-        console.error("Resposta inesperada da PushinPay:", anyData);
+      // TriboPay retorna qrCode e qrCodeBase64
+      if (!anyData.qrCodeBase64 && !anyData.qrCode) {
+        console.error("Resposta inesperada da TriboPay:", anyData);
         setPixError("Resposta inválida do provedor de pagamento.");
         return;
       }
 
-      setPixQrBase64(anyData.qr_code_base64 || null);
-      setPixCode(anyData.qr_code || null);
-      trackEvent(product === "whatsapp" ? "click_whatsapp_pix" : "click_plan_pix");
+      setPixQrBase64(anyData.qrCodeBase64 || null);
+      setPixCode(anyData.qrCode || null);
+      setCurrentOrderId(anyData.orderId || null);
+      setCurrentOrderType(pendingProduct === "whatsapp" ? "whatsapp" : "subscription");
+      trackEvent(pendingProduct === "whatsapp" ? "click_whatsapp_pix" : "click_plan_pix");
     } catch (error) {
       console.error("Erro inesperado ao criar pagamento PIX:", error);
       setPixError("Erro inesperado ao gerar o pagamento PIX.");
@@ -236,17 +286,17 @@ const Index = () => {
 
               <div className="mt-2 space-y-3">
               {subscriptionPlansFromConfig(siteConfig).map((plan) => (
-                <Button
-                  key={plan.label}
-                  variant="cta"
-                  className="flex w-full items-center justify-between rounded-2xl px-5 py-4 text-base font-semibold shadow-lg shadow-primary/40 md:text-lg"
-                  style={siteConfig.primaryButtonBgColor ? { backgroundColor: siteConfig.primaryButtonBgColor } : undefined}
-                  onClick={() => handlePixCheckout("mensalidade")}
-                >
-                  <span>{plan.label}</span>
-                  <span className="flex items-center gap-2 text-sm font-semibold">{plan.price}</span>
-                </Button>
-              ))}
+                  <Button
+                    key={plan.label}
+                    variant="cta"
+                    className="flex w-full items-center justify-between rounded-2xl px-5 py-4 text-base font-semibold shadow-lg shadow-primary/40 md:text-lg"
+                    style={siteConfig.primaryButtonBgColor ? { backgroundColor: siteConfig.primaryButtonBgColor } : undefined}
+                    onClick={() => openPixForm("mensalidade")}
+                  >
+                    <span>{plan.label}</span>
+                    <span className="flex items-center gap-2 text-sm font-semibold">{plan.price}</span>
+                  </Button>
+                ))}
 
               <Button
                 variant="whatsapp"
@@ -254,7 +304,7 @@ const Index = () => {
                 style={siteConfig.whatsappButtonBgColor ? { backgroundColor: siteConfig.whatsappButtonBgColor } : undefined}
                 onClick={() => {
                   trackEvent("click_whatsapp");
-                  handlePixCheckout("whatsapp");
+                  openPixForm("whatsapp");
                 }}
               >
                 <span>{siteConfig.whatsappButtonLabel}</span>
@@ -314,12 +364,62 @@ const Index = () => {
               pagamento seguro
             </p>
             <DialogTitle className="text-lg font-semibold tracking-tight">
-              Pague sua assinatura com PIX
+              {pixQrBase64 || pixCode ? "Pague com PIX" : "Preencha seus dados"}
             </DialogTitle>
             <p className="text-xs text-muted-foreground">
-              Escaneie o QR Code ou use o código copia e cola para concluir o pagamento em poucos segundos.
+              {pixQrBase64 || pixCode
+                ? "Escaneie o QR Code ou use o código copia e cola para concluir o pagamento."
+                : "Informe seus dados para gerar o PIX."}
             </p>
           </DialogHeader>
+
+          {/* Formulário de dados */}
+          {!pixQrBase64 && !pixCode && !isLoadingPix && (
+            <div className="mt-4 space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="pix-name" className="text-xs">Nome completo</Label>
+                <Input
+                  id="pix-name"
+                  placeholder="Seu nome"
+                  value={formName}
+                  onChange={(e) => setFormName(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="pix-email" className="text-xs">E-mail</Label>
+                <Input
+                  id="pix-email"
+                  type="email"
+                  placeholder="seu@email.com"
+                  value={formEmail}
+                  onChange={(e) => setFormEmail(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="pix-cpf" className="text-xs">CPF</Label>
+                <Input
+                  id="pix-cpf"
+                  placeholder="000.000.000-00"
+                  value={formCpf}
+                  onChange={(e) => setFormCpf(formatCpf(e.target.value))}
+                />
+              </div>
+              
+              {pixError && (
+                <p className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-center text-sm text-destructive">
+                  {pixError}
+                </p>
+              )}
+
+              <Button
+                variant="cta"
+                className="w-full rounded-2xl py-3 text-sm font-semibold"
+                onClick={handlePixCheckout}
+              >
+                Gerar PIX
+              </Button>
+            </div>
+          )}
 
           {isLoadingPix && (
             <p className="mt-4 text-center text-sm text-muted-foreground">
@@ -327,13 +427,13 @@ const Index = () => {
             </p>
           )}
 
-          {!isLoadingPix && pixError && (
+          {!isLoadingPix && pixError && (pixQrBase64 || pixCode) && (
             <p className="mt-4 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-center text-sm text-destructive">
               {pixError}
             </p>
           )}
 
-          {!isLoadingPix && !pixError && (
+          {!isLoadingPix && (pixQrBase64 || pixCode) && (
             <div className="mt-4 space-y-4">
               {pixQrBase64 && (
                 <div className="flex justify-center">
