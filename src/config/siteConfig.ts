@@ -32,7 +32,7 @@ export const defaultSiteConfig: SiteConfig = {
   heroBannerUrl: banner,
   heroPostsCount: "744",
   heroLikesCount: "370k",
-  profileName: "Bolzani",
+  profileName: "Tainá Costa",
   profileSubtitle: "Conteúdo adulto exclusivo",
   profileImageUrl: profileBolzani,
   primaryPlanLabel: "Assinar (30 dias)",
