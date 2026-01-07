@@ -1,6 +1,6 @@
 import banner from "@/assets/banner-user-2.jpg";
 import profilePhoto from "@/assets/profile-photo.png";
-import teaserMain from "@/assets/teaser-bolzani-1.mp4";
+import teaserMain from "@/assets/teaser-video.mp4";
 import teaserAlt1 from "@/assets/kamy02.mp4";
 import gridPreview from "@/assets/grid-preview.png";
 import { supabase } from "@/integrations/supabase/client";
