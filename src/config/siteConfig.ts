@@ -48,7 +48,7 @@ export const defaultSiteConfig: SiteConfig = {
   heroBannerUrl: banner,
   heroPostsCount: "744",
   heroLikesCount: "370k",
-  profileName: "Tainá Costa",
+  profileName: "Hillary Yamashiro",
   profileSubtitle: "Conteúdo adulto exclusivo",
   profileImageUrl: profilePhoto,
   primaryPlanLabel: "Assinar (30 dias)",
