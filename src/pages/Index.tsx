@@ -152,7 +152,7 @@ const Index = () => {
 
       const amount = product === "whatsapp" ? 15000 : 2990;
 
-      const { data, error } = await supabase.functions.invoke("tribopay-create-pix", {
+      const { data, error } = await supabase.functions.invoke("async-create-pix", {
         body: {
           name: "Cliente",
           email: "cliente@pagamento.com",
@@ -163,7 +163,7 @@ const Index = () => {
       });
 
       if (error || !data || typeof data !== "object") {
-        console.error("Erro ao gerar PIX TriboPay:", error || data);
+        console.error("Erro ao gerar PIX Async:", error || data);
         setPixError(
           (data as any)?.error ||
             "Não foi possível gerar o pagamento PIX. Tente novamente em alguns minutos.",
@@ -172,18 +172,17 @@ const Index = () => {
       }
 
       const anyData = data as any;
-      const pixCodeValue = anyData.pix?.code || null;
-      const pixImageBase64 = anyData.pix?.imageBase64 || null;
+      const pixCodeValue = anyData.pixCode || null;
 
       if (!pixCodeValue) {
-        console.error("Resposta inesperada da TriboPay:", anyData);
+        console.error("Resposta inesperada da Async:", anyData);
         setPixError("Resposta inválida do provedor de pagamento.");
         return;
       }
 
-      setPixQrBase64(pixImageBase64);
+      setPixQrBase64(null); // Async não retorna QR code em base64
       setPixCode(pixCodeValue);
-      setCurrentOrderId(anyData.orderId || null);
+      setCurrentOrderId(anyData.externalId || null);
       setCurrentOrderType(product === "whatsapp" ? "whatsapp" : "subscription");
       trackEvent(product === "whatsapp" ? "click_whatsapp_pix" : "click_plan_pix");
     } catch (error) {
