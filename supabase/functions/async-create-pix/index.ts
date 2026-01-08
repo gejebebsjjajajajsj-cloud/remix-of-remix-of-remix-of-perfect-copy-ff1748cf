@@ -32,11 +32,18 @@ function getWebhookUrl() {
 async function getAuthToken(): Promise<string | null> {
   if (!clientId || !clientSecret) {
     console.error("SYNC_CLIENT_ID ou SYNC_CLIENT_SECRET não configurados.");
+    console.error("clientId presente:", !!clientId);
+    console.error("clientSecret presente:", !!clientSecret);
     return null;
   }
 
+  console.log("Tentando obter token de autenticação...");
+
   try {
-    const response = await fetch(`${ASYNC_BASE_URL}/api/partner/v1/auth-token`, {
+    const authUrl = `${ASYNC_BASE_URL}/api/partner/v1/auth-token`;
+    console.log("Auth URL:", authUrl);
+
+    const response = await fetch(authUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -48,12 +55,15 @@ async function getAuthToken(): Promise<string | null> {
     });
 
     const data = await response.json();
+    console.log("Resposta auth status:", response.status);
+    console.log("Resposta auth data:", JSON.stringify(data));
 
     if (!response.ok) {
       console.error("Erro ao obter token Async:", data);
       return null;
     }
 
+    console.log("Token obtido com sucesso");
     return data.access_token;
   } catch (error) {
     console.error("Erro ao obter token Async:", error);
