@@ -333,20 +333,6 @@ const Index = () => {
                   </Button>
                 ))}
 
-                <Button
-                  variant="whatsapp"
-                  className="flex w-full items-center justify-between rounded-2xl px-5 py-4 text-base font-semibold shadow-lg shadow-emerald-500/40 md:text-lg"
-                  style={siteConfig.whatsappButtonBgColor ? { backgroundColor: siteConfig.whatsappButtonBgColor } : undefined}
-                  onClick={() => {
-                    trackEvent("click_whatsapp");
-                    handleOpenCpfModal("whatsapp");
-                  }}
-                >
-                  <span>{siteConfig.whatsappButtonLabel}</span>
-                  <span className="flex items-center gap-2 text-sm font-semibold">
-                    {siteConfig.whatsappButtonPriceText}
-                  </span>
-                </Button>
               </div>
 
               <p className="flex items-center gap-2 text-[0.7rem] text-muted-foreground">
