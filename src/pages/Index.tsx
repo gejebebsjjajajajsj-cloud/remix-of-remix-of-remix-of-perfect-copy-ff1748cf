@@ -385,18 +385,6 @@ const Index = () => {
               />
             </figure>
           </div>
-
-          <figure
-            className="card-elevated overflow-hidden rounded-3xl"
-            aria-label="Prévia em foto do feed"
-          >
-            <img
-              src={siteConfig.gridImageUrl}
-              alt="Prévia do feed com fotos"
-              className="h-full w-full object-cover"
-              loading="lazy"
-            />
-          </figure>
         </div>
       </section>
 
