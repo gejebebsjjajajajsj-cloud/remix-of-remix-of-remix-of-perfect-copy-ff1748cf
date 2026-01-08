@@ -2,7 +2,7 @@ import banner from "@/assets/banner-new.jpg";
 import profilePhoto from "@/assets/profile-new.jpg";
 import teaserMain from "@/assets/teaser-video.mp4";
 import teaserAlt1 from "@/assets/kamy02.mp4";
-import gridPreview from "@/assets/grid-preview.png";
+import gridPreview from "@/assets/grid-new.jpg";
 import { supabase } from "@/integrations/supabase/client";
 
 export const SITE_CONFIG_STORAGE_KEY = "site_admin_config_v1";
